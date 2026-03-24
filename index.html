@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DataGraph — Business Intelligence Explorer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0c10;
+    --bg2: #111318;
+    --bg3: #181b22;
+    --border: #1e2330;
+    --border2: #252b3a;
+    --text: #e2e8f0;
+    --text2: #8892a4;
+    --text3: #525d73;
+    --accent: #3b82f6;
+    --accent2: #6366f1;
+    --green: #10b981;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+    --orange: #f97316;
+    --pink: #ec4899;
+
+    --node-customer: #3b82f6;
+    --node-order: #8b5cf6;
+    --node-orderitem: #a78bfa;
+    --node-product: #10b981;
+    --node-delivery: #f59e0b;
+    --node-invoice: #ef4444;
+    --node-payment: #f97316;
+    --node-journal: #ec4899;
+    --node-address: #64748b;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif; overflow: hidden; }
+
+  /* ─── Layout ─── */
+  #root { display: flex; flex-direction: column; height: 100vh; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; height: 52px; border-bottom: 1px solid var(--border);
+    background: var(--bg); flex-shrink: 0; z-index: 10;
+  }
+  .header-logo { display: flex; align-items: center; gap: 10px; }
+  .header-logo .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .header-logo h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.05em; color: var(--text); }
+  .header-logo span { color: var(--accent); }
+  .header-stats { display: flex; gap: 16px; font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: var(--text3); }
+  .header-stats span { color: var(--text2); }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ─── Graph Panel ─── */
+  .graph-panel {
+    flex: 1; position: relative; overflow: hidden;
+    background: var(--bg);
+  }
+  .graph-panel canvas, .graph-panel svg { position: absolute; inset: 0; }
+
+  .graph-svg { width: 100%; height: 100%; }
+
+  .graph-controls {
+    position: absolute; bottom: 20px; left: 20px;
+    display: flex; flex-direction: column; gap: 6px; z-index: 10;
+  }
+  .ctrl-btn {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: var(--bg3); border: 1px solid var(--border2);
+    color: var(--text2); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+  .ctrl-btn:hover { background: var(--border2); color: var(--text); }
+
+  .legend {
+    position: absolute; top: 16px; left: 16px; z-index: 10;
+    background: rgba(10,12,16,0.85); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+    backdrop-filter: blur(12px);
+  }
+  .legend-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; font-size: 11px; color: var(--text2); cursor: pointer; transition: color .15s; }
+  .legend-item:hover { color: var(--text); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .legend-item.dimmed { opacity: 0.35; }
+
+  /* Node tooltip */
+  .node-tooltip {
+    position: absolute; z-index: 100; pointer-events: none;
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 12px 14px; font-size: 12px;
+    min-width: 180px; max-width: 260px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    opacity: 0; transition: opacity .15s;
+  }
+  .node-tooltip.visible { opacity: 1; }
+  .tooltip-type { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 6px; }
+  .tooltip-id { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
+  .tooltip-row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 3px; }
+  .tooltip-row .k { color: var(--text3); font-size: 11px; }
+  .tooltip-row .v { color: var(--text2); font-size: 11px; font-family: 'IBM Plex Mono', monospace; text-align: right; }
+
+  /* ─── Right Panel ─── */
+  .right-panel {
+    width: 400px; flex-shrink: 0; display: flex; flex-direction: column;
+    border-left: 1px solid var(--border); background: var(--bg2);
+  }
+
+  .panel-tabs {
+    display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .tab {
+    flex: 1; padding: 12px; font-size: 12px; font-weight: 500;
+    text-align: center; cursor: pointer; color: var(--text3);
+    border-bottom: 2px solid transparent; transition: all .15s;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:hover:not(.active) { color: var(--text2); }
+
+  /* ─── Chat ─── */
+  .chat-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
+  }
+
+  .msg { display: flex; flex-direction: column; gap: 4px; animation: fadeUp .3s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .msg.user { align-items: flex-end; }
+  .msg.assistant { align-items: flex-start; }
+
+  .msg-bubble {
+    max-width: 88%; padding: 10px 14px; border-radius: 10px;
+    font-size: 13px; line-height: 1.6;
+  }
+  .msg.user .msg-bubble { background: var(--accent); color: #fff; border-radius: 10px 10px 2px 10px; }
+  .msg.assistant .msg-bubble {
+    background: var(--bg3); color: var(--text); border: 1px solid var(--border2);
+    border-radius: 10px 10px 10px 2px;
+  }
+  .msg.assistant .msg-bubble.thinking {
+    color: var(--text3); font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+  }
+
+  .msg-meta { font-size: 10px; color: var(--text3); font-family: 'IBM Plex Mono', monospace; }
+
+  .msg-bubble pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; margin: 8px 0; font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; overflow-x: auto; white-space: pre-wrap; color: var(--green);
+  }
+
+  .msg-bubble table {
+    width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 11px;
+  }
+  .msg-bubble th {
+    background: var(--bg); color: var(--text3); font-weight: 500; padding: 6px 8px;
+    text-align: left; border-bottom: 1px solid var(--border2); font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase;
+  }
+  .msg-bubble td { padding: 5px 8px; border-bottom: 1px solid var(--border); color: var(--text2); }
+  .msg-bubble tr:last-child td { border-bottom: none; }
+
+  .status-badge {
+    display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px;
+    border-radius: 3px; font-family: 'IBM Plex Mono', monospace; margin: 0 2px;
+  }
+  .badge-green { background: rgba(16,185,129,.15); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,.15); color: var(--red); }
+  .badge-yellow { background: rgba(245,158,11,.15); color: var(--yellow); }
+
+  .chat-suggestions {
+    padding: 0 16px 10px; display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .suggestion-chip {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px;
+    background: var(--bg3); border: 1px solid var(--border2);
+    color: var(--text3); cursor: pointer; transition: all .15s;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .suggestion-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  .chat-input-area {
+    padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .chat-input-row { display: flex; gap: 8px; align-items: flex-end; }
+  .chat-input {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 10px 12px; font-size: 13px;
+    color: var(--text); font-family: 'Space Grotesk', sans-serif;
+    resize: none; min-height: 40px; max-height: 120px; outline: none;
+    transition: border-color .15s; line-height: 1.4;
+  }
+  .chat-input:focus { border-color: var(--accent); }
+  .chat-input::placeholder { color: var(--text3); }
+  .send-btn {
+    width: 40px; height: 40px; border-radius: 8px; background: var(--accent);
+    border: none; color: #fff; cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s; flex-shrink: 0;
+  }
+  .send-btn:hover { background: #2563eb; }
+  .send-btn:disabled { background: var(--bg3); color: var(--text3); cursor: not-allowed; }
+
+  .api-key-banner {
+    background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.2);
+    border-radius: 8px; padding: 10px 12px; margin: 12px 16px 0;
+    font-size: 12px; color: var(--yellow); display: flex; align-items: flex-start; gap: 8px;
+  }
+  .api-key-input {
+    background: var(--bg); border: 1px solid var(--border2); border-radius: 6px;
+    padding: 8px 10px; font-size: 12px; color: var(--text);
+    font-family: 'IBM Plex Mono', monospace; width: 100%; margin-top: 8px; outline: none;
+  }
+  .api-key-input:focus { border-color: var(--accent); }
+
+  /* ─── Schema Panel ─── */
+  .schema-panel { padding: 16px; overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+  .schema-entity {
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden;
+  }
+  .schema-header {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    background: var(--bg3); cursor: pointer;
+  }
+  .schema-header .ent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .schema-header .ent-name { font-size: 12px; font-weight: 600; flex: 1; }
+  .schema-header .ent-count { font-size: 11px; color: var(--text3); font-family: 'IBM Plex Mono', monospace; }
+  .schema-fields { padding: 8px 12px; }
+  .schema-field { display: flex; gap: 8px; margin-bottom: 4px; font-size: 11px; }
+  .schema-field .fk { color: var(--text3); font-family: 'IBM Plex Mono', monospace; }
+  .schema-field .ft { color: var(--accent2); font-family: 'IBM Plex Mono', monospace; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .graph-loading {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: var(--text3); font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+
+  .highlighted-node { filter: drop-shadow(0 0 8px currentColor); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// DATASET
+// ══════════════════════════════════════════════════════════
+const customers = [
+  { id: "C001", name: "Acme Corp", region: "North", segment: "Enterprise", contact: "alice@acme.com" },
+  { id: "C002", name: "TechFlow Ltd", region: "West", segment: "Mid-Market", contact: "bob@techflow.com" },
+  { id: "C003", name: "Global Traders", region: "East", segment: "Enterprise", contact: "carol@globaltraders.com" },
+  { id: "C004", name: "Swift Solutions", region: "South", segment: "SMB", contact: "dave@swift.com" },
+  { id: "C005", name: "Meridian Inc", region: "North", segment: "Mid-Market", contact: "eve@meridian.com" },
+];
+const products = [
+  { id: "P001", name: "Industrial Pump A", category: "Machinery", price: 4500, unit: "EA", material: "M-1001" },
+  { id: "P002", name: "Control Valve B", category: "Valves", price: 1200, unit: "EA", material: "M-1002" },
+  { id: "P003", name: "Sensor Module C", category: "Electronics", price: 350, unit: "EA", material: "M-1003" },
+  { id: "P004", name: "Steel Pipe 6in", category: "Piping", price: 220, unit: "M", material: "M-1004" },
+  { id: "P005", name: "Pressure Gauge D", category: "Instruments", price: 180, unit: "EA", material: "M-1005" },
+  { id: "P006", name: "Electric Motor E", category: "Machinery", price: 8200, unit: "EA", material: "M-1006" },
+];
+const addresses = [
+  { id: "A001", street: "123 Industrial Ave", city: "Chicago", state: "IL", zip: "60601", plant: "PLANT-01" },
+  { id: "A002", street: "456 Commerce Blvd", city: "Los Angeles", state: "CA", zip: "90001", plant: "PLANT-02" },
+  { id: "A003", street: "789 Trade Street", city: "New York", state: "NY", zip: "10001", plant: "PLANT-03" },
+  { id: "A004", street: "321 Business Pkwy", city: "Houston", state: "TX", zip: "77001", plant: "PLANT-04" },
+];
+const orders = [
+  { id: "SO-1001", customerId: "C001", date: "2024-01-10", status: "Completed", totalAmount: 14700, currency: "USD", salesRep: "John D." },
+  { id: "SO-1002", customerId: "C002", date: "2024-01-15", status: "Completed", totalAmount: 6000, currency: "USD", salesRep: "Sarah K." },
+  { id: "SO-1003", customerId: "C003", date: "2024-01-20", status: "In Progress", totalAmount: 24600, currency: "USD", salesRep: "John D." },
+  { id: "SO-1004", customerId: "C001", date: "2024-02-01", status: "Completed", totalAmount: 3600, currency: "USD", salesRep: "Mike R." },
+  { id: "SO-1005", customerId: "C004", date: "2024-02-10", status: "Completed", totalAmount: 1800, currency: "USD", salesRep: "Sarah K." },
+  { id: "SO-1006", customerId: "C005", date: "2024-02-20", status: "Pending", totalAmount: 8200, currency: "USD", salesRep: "Mike R." },
+  { id: "SO-1007", customerId: "C003", date: "2024-03-01", status: "Completed", totalAmount: 5400, currency: "USD", salesRep: "John D." },
+  { id: "SO-1008", customerId: "C002", date: "2024-03-15", status: "Cancelled", totalAmount: 2200, currency: "USD", salesRep: "Sarah K." },
+];
+const orderItems = [
+  { id: "OI-001", orderId: "SO-1001", productId: "P001", quantity: 2, unitPrice: 4500, lineTotal: 9000 },
+  { id: "OI-002", orderId: "SO-1001", productId: "P003", quantity: 8, unitPrice: 350, lineTotal: 2800 },
+  { id: "OI-003", orderId: "SO-1001", productId: "P005", quantity: 5, unitPrice: 180, lineTotal: 900 },
+  { id: "OI-004", orderId: "SO-1002", productId: "P002", quantity: 5, unitPrice: 1200, lineTotal: 6000 },
+  { id: "OI-005", orderId: "SO-1003", productId: "P006", quantity: 3, unitPrice: 8200, lineTotal: 24600 },
+  { id: "OI-006", orderId: "SO-1004", productId: "P002", quantity: 3, unitPrice: 1200, lineTotal: 3600 },
+  { id: "OI-007", orderId: "SO-1005", productId: "P005", quantity: 10, unitPrice: 180, lineTotal: 1800 },
+  { id: "OI-008", orderId: "SO-1006", productId: "P006", quantity: 1, unitPrice: 8200, lineTotal: 8200 },
+  { id: "OI-009", orderId: "SO-1007", productId: "P004", quantity: 15, unitPrice: 220, lineTotal: 3300 },
+  { id: "OI-010", orderId: "SO-1007", productId: "P003", quantity: 6, unitPrice: 350, lineTotal: 2100 },
+  { id: "OI-011", orderId: "SO-1008", productId: "P001", quantity: 1, unitPrice: 2200, lineTotal: 2200 },
+];
+const deliveries = [
+  { id: "DEL-2001", orderId: "SO-1001", addressId: "A001", date: "2024-01-18", status: "Delivered", carrier: "FedEx", trackingNo: "FX-99001" },
+  { id: "DEL-2002", orderId: "SO-1002", addressId: "A002", date: "2024-01-22", status: "Delivered", carrier: "UPS", trackingNo: "UP-99002" },
+  { id: "DEL-2003", orderId: "SO-1003", addressId: "A003", date: "2024-02-01", status: "In Transit", carrier: "DHL", trackingNo: "DH-99003" },
+  { id: "DEL-2004", orderId: "SO-1004", addressId: "A001", date: "2024-02-08", status: "Delivered", carrier: "FedEx", trackingNo: "FX-99004" },
+  { id: "DEL-2005", orderId: "SO-1005", addressId: "A004", date: "2024-02-15", status: "Delivered", carrier: "UPS", trackingNo: "UP-99005" },
+  { id: "DEL-2006", orderId: "SO-1007", addressId: "A003", date: "2024-03-10", status: "Delivered", carrier: "DHL", trackingNo: "DH-99006" },
+];
+const invoices = [
+  { id: "INV-3001", orderId: "SO-1001", deliveryId: "DEL-2001", date: "2024-01-20", amount: 14700, status: "Paid", dueDate: "2024-02-20" },
+  { id: "INV-3002", orderId: "SO-1002", deliveryId: "DEL-2002", date: "2024-01-25", amount: 6000, status: "Paid", dueDate: "2024-02-25" },
+  { id: "INV-3003", orderId: "SO-1004", deliveryId: "DEL-2004", date: "2024-02-10", amount: 3600, status: "Overdue", dueDate: "2024-03-10" },
+  { id: "INV-3004", orderId: "SO-1005", deliveryId: "DEL-2005", date: "2024-02-18", amount: 1800, status: "Paid", dueDate: "2024-03-18" },
+  { id: "INV-3005", orderId: "SO-1007", deliveryId: "DEL-2006", date: "2024-03-12", amount: 5400, status: "Pending", dueDate: "2024-04-12" },
+];
+const payments = [
+  { id: "PAY-4001", invoiceId: "INV-3001", date: "2024-02-15", amount: 14700, method: "Wire Transfer", status: "Cleared", journalEntry: "JE-5001" },
+  { id: "PAY-4002", invoiceId: "INV-3002", date: "2024-02-20", amount: 6000, method: "ACH", status: "Cleared", journalEntry: "JE-5002" },
+  { id: "PAY-4003", invoiceId: "INV-3004", date: "2024-03-10", amount: 1800, method: "Check", status: "Cleared", journalEntry: "JE-5003" },
+];
+const journalEntries = [
+  { id: "JE-5001", paymentId: "PAY-4001", date: "2024-02-15", debit: "Accounts Receivable", credit: "Revenue", amount: 14700, period: "2024-02" },
+  { id: "JE-5002", paymentId: "PAY-4002", date: "2024-02-20", debit: "Accounts Receivable", credit: "Revenue", amount: 6000, period: "2024-02" },
+  { id: "JE-5003", paymentId: "PAY-4003", date: "2024-03-10", debit: "Accounts Receivable", credit: "Revenue", amount: 1800, period: "2024-03" },
+];
+
+const db = { customers, products, addresses, orders, orderItems, deliveries, invoices, payments, journalEntries };
+
+// ══════════════════════════════════════════════════════════
+// GRAPH BUILDER
+// ══════════════════════════════════════════════════════════
+const TYPE_COLORS = {
+  Customer: "#3b82f6", Order: "#8b5cf6", OrderItem: "#a78bfa",
+  Product: "#10b981", Delivery: "#f59e0b", Invoice: "#ef4444",
+  Payment: "#f97316", JournalEntry: "#ec4899", Address: "#64748b",
+};
+
+function buildGraph() {
+  const nodes = [];
+  const links = [];
+
+  customers.forEach(c => nodes.push({ id: c.id, label: c.name, type: "Customer", color: TYPE_COLORS.Customer, data: c }));
+  products.forEach(p => nodes.push({ id: p.id, label: p.name, type: "Product", color: TYPE_COLORS.Product, data: p }));
+  addresses.forEach(a => nodes.push({ id: a.id, label: `${a.city}`, type: "Address", color: TYPE_COLORS.Address, data: a }));
+  orders.forEach(o => nodes.push({ id: o.id, label: o.id, type: "Order", color: TYPE_COLORS.Order, data: o }));
+  orderItems.forEach(oi => nodes.push({ id: oi.id, label: oi.id, type: "OrderItem", color: TYPE_COLORS.OrderItem, data: oi }));
+  deliveries.forEach(d => nodes.push({ id: d.id, label: d.id, type: "Delivery", color: TYPE_COLORS.Delivery, data: d }));
+  invoices.forEach(i => nodes.push({ id: i.id, label: i.id, type: "Invoice", color: TYPE_COLORS.Invoice, data: i }));
+  payments.forEach(p => nodes.push({ id: p.id, label: p.id, type: "Payment", color: TYPE_COLORS.Payment, data: p }));
+  journalEntries.forEach(je => nodes.push({ id: je.id, label: je.id, type: "JournalEntry", color: TYPE_COLORS.JournalEntry, data: je }));
+
+  orders.forEach(o => links.push({ source: o.customerId, target: o.id, label: "PLACED" }));
+  orderItems.forEach(oi => {
+    links.push({ source: oi.orderId, target: oi.id, label: "HAS_ITEM" });
+    links.push({ source: oi.id, target: oi.productId, label: "IS_PRODUCT" });
+  });
+  deliveries.forEach(d => {
+    links.push({ source: d.orderId, target: d.id, label: "HAS_DELIVERY" });
+    links.push({ source: d.id, target: d.addressId, label: "SHIPPED_TO" });
+  });
+  invoices.forEach(i => {
+    links.push({ source: i.orderId, target: i.id, label: "BILLED_AS" });
+    if (i.deliveryId) links.push({ source: i.deliveryId, target: i.id, label: "INVOICED_FOR" });
+  });
+  payments.forEach(p => {
+    links.push({ source: p.invoiceId, target: p.id, label: "SETTLED_BY" });
+    links.push({ source: p.id, target: p.journalEntry, label: "RECORDED_AS" });
+  });
+
+  return { nodes, links };
+}
+
+// ══════════════════════════════════════════════════════════
+// QUERY ENGINE - structured operations on data
+// ══════════════════════════════════════════════════════════
+function executeQuery(intent, params) {
+  switch (intent) {
+    case "products_by_billing": {
+      // Count invoices per product
+      const productInvoiceCount = {};
+      products.forEach(p => { productInvoiceCount[p.id] = 0; });
+      invoices.forEach(inv => {
+        const items = orderItems.filter(oi => oi.orderId === inv.orderId);
+        items.forEach(oi => {
+          if (!productInvoiceCount[oi.productId]) productInvoiceCount[oi.productId] = 0;
+          productInvoiceCount[oi.productId]++;
+        });
+      });
+      return products.map(p => ({ ...p, billingCount: productInvoiceCount[p.id] || 0 }))
+        .sort((a, b) => b.billingCount - a.billingCount);
+    }
+
+    case "trace_billing": {
+      const docId = params?.docId;
+      const inv = invoices.find(i => i.id === docId);
+      if (!inv) return null;
+      const order = orders.find(o => o.id === inv.orderId);
+      const customer = order ? customers.find(c => c.id === order.customerId) : null;
+      const delivery = deliveries.find(d => d.id === inv.deliveryId);
+      const address = delivery ? addresses.find(a => a.id === delivery.addressId) : null;
+      const payment = payments.find(p => p.invoiceId === inv.id);
+      const je = payment ? journalEntries.find(j => j.id === payment.journalEntry) : null;
+      const items = orderItems.filter(oi => oi.orderId === inv.orderId);
+      const itemDetails = items.map(oi => ({ ...oi, product: products.find(p => p.id === oi.productId) }));
+      return { inv, order, customer, delivery, address, payment, je, items: itemDetails };
+    }
+
+    case "broken_flows": {
+      const result = [];
+      orders.forEach(o => {
+        if (o.status === "Cancelled") return;
+        const delivery = deliveries.find(d => d.orderId === o.id);
+        const invoice = invoices.find(i => i.orderId === o.id);
+        const payment = invoice ? payments.find(p => p.invoiceId === invoice.id) : null;
+        const issues = [];
+        if (!delivery && o.status !== "Pending") issues.push("No delivery");
+        if (delivery && !invoice) issues.push("Delivered but not billed");
+        if (invoice && !payment && invoice.status !== "Pending") issues.push("Invoiced but not paid");
+        if (invoice && invoice.status === "Overdue") issues.push("Invoice overdue");
+        if (issues.length > 0) {
+          const customer = customers.find(c => c.id === o.customerId);
+          result.push({ order: o, customer, delivery, invoice, issues });
+        }
+      });
+      return result;
+    }
+
+    case "customer_summary": {
+      return customers.map(c => {
+        const cOrders = orders.filter(o => o.customerId === c.id);
+        const totalRevenue = cOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+        const cInvoices = invoices.filter(i => cOrders.find(o => o.id === i.orderId));
+        const paid = cInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + i.amount, 0);
+        return { ...c, orderCount: cOrders.length, totalRevenue, paidAmount: paid };
+      }).sort((a, b) => b.totalRevenue - a.totalRevenue);
+    }
+
+    case "overdue_invoices": {
+      return invoices.filter(i => i.status === "Overdue" || i.status === "Pending").map(i => {
+        const order = orders.find(o => o.id === i.orderId);
+        const customer = order ? customers.find(c => c.id === order.customerId) : null;
+        return { ...i, order, customer };
+      });
+    }
+
+    case "all_orders": {
+      return orders.map(o => {
+        const customer = customers.find(c => c.id === o.customerId);
+        const delivery = deliveries.find(d => d.orderId === o.id);
+        const invoice = invoices.find(i => i.orderId === o.id);
+        return { ...o, customer, hasDelivery: !!delivery, hasInvoice: !!invoice };
+      });
+    }
+
+    case "revenue_by_category": {
+      const catRevenue = {};
+      orderItems.forEach(oi => {
+        const inv = invoices.find(i => i.orderId === oi.orderId);
+        if (inv) {
+          const product = products.find(p => p.id === oi.productId);
+          if (product) {
+            catRevenue[product.category] = (catRevenue[product.category] || 0) + oi.lineTotal;
+          }
+        }
+      });
+      return Object.entries(catRevenue).map(([cat, rev]) => ({ category: cat, revenue: rev }))
+        .sort((a, b) => b.revenue - a.revenue);
+    }
+
+    default: return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// LLM QUERY TRANSLATOR - NL → structured intent
+// ══════════════════════════════════════════════════════════
+async function translateAndAnswer(userQuery, apiKey) {
+  const systemPrompt = `You are a business data analyst AI for a supply chain management system. You ONLY answer questions about the following dataset. You must REFUSE any off-topic requests.
+
+DATASET SCHEMA:
+- customers: id, name, region, segment, contact
+- products: id, name, category, price, unit, material  
+- addresses: id, street, city, state, zip, plant
+- orders: id, customerId, date, status (Completed/In Progress/Pending/Cancelled), totalAmount, currency, salesRep
+- orderItems: id, orderId, productId, quantity, unitPrice, lineTotal
+- deliveries: id, orderId, addressId, date, status (Delivered/In Transit), carrier, trackingNo
+- invoices: id, orderId, deliveryId, date, amount, status (Paid/Overdue/Pending), dueDate
+- payments: id, invoiceId, date, amount, method, status (Cleared), journalEntry
+- journalEntries: id, paymentId, date, debit, credit, amount, period
+
+ACTUAL DATA SUMMARY:
+- 5 customers: Acme Corp (C001), TechFlow Ltd (C002), Global Traders (C003), Swift Solutions (C004), Meridian Inc (C005)
+- 6 products: Industrial Pump A (P001,$4500), Control Valve B (P002,$1200), Sensor Module C (P003,$350), Steel Pipe 6in (P004,$220), Pressure Gauge D (P005,$180), Electric Motor E (P006,$8200)
+- 8 orders: SO-1001 to SO-1008
+- 11 order items
+- 6 deliveries (SO-1006 has NO delivery, SO-1008 cancelled)
+- 5 invoices (SO-1003 delivered but NOT invoiced = broken flow!)
+- 3 payments (INV-3003 overdue unpaid, INV-3005 pending)
+- 3 journal entries
+
+QUERY INTENTS available:
+1. products_by_billing - which products appear in most billing docs
+2. trace_billing:<INV_ID> - trace full flow for an invoice
+3. broken_flows - orders with incomplete/broken flows
+4. customer_summary - overview of all customers
+5. overdue_invoices - unpaid/overdue invoices
+6. all_orders - list all orders with status
+7. revenue_by_category - revenue breakdown by product category
+
+INSTRUCTIONS:
+1. First determine if the question is about this dataset. If NOT (e.g. general knowledge, coding, creative writing), respond ONLY with: {"intent":"off_topic","answer":"This system is designed to answer questions related to the provided supply chain dataset only. I can help you with orders, deliveries, invoices, payments, products, and customers within this system."}
+2. If it IS about the dataset, pick the best intent and respond with JSON:
+   {"intent":"<intent_name>","params":{},"thinking":"<1 sentence>","narrative":"<your natural language answer using data>"}
+3. For trace_billing, set params: {"docId":"INV-XXXX"}
+4. The narrative should be specific, data-backed, and reference actual IDs and values.
+5. If asking about a specific entity, include all relevant details in the narrative.
+
+Respond ONLY with valid JSON. No markdown.`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1200,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userQuery }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || "API error");
+  }
+
+  const data = await response.json();
+  const text = data.content[0]?.text || "{}";
+  try {
+    return JSON.parse(text.replace(/```json|```/g, "").trim());
+  } catch {
+    return { intent: "error", narrative: text };
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// FORMAT QUERY RESULTS FOR DISPLAY
+// ══════════════════════════════════════════════════════════
+function formatResult(intent, params, queryResult, narrative) {
+  if (!queryResult && intent !== "off_topic" && intent !== "error") {
+    return `<p>${narrative || "No data found."}</p>`;
+  }
+  
+  let html = `<p style="margin-bottom:10px">${narrative || ""}</p>`;
+
+  switch (intent) {
+    case "products_by_billing": {
+      html += `<table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Billing Docs</th></tr></thead><tbody>`;
+      queryResult.slice(0, 6).forEach(p => {
+        html += `<tr><td>${p.name}</td><td>${p.category}</td><td>$${p.price.toLocaleString()}</td><td>${p.billingCount}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      break;
+    }
+    case "trace_billing": {
+      if (!queryResult) { html += `<p style="color:var(--red)">Invoice not found.</p>`; break; }
+      const { inv, order, customer, delivery, address, payment, je, items } = queryResult;
+      html += `<div style="font-size:11px;line-height:1.8">`;
+      html += `<div style="margin-bottom:8px"><b style="color:var(--text3);text-transform:uppercase;font-size:10px;letter-spacing:.08em">Flow Trace</b></div>`;
+      html += `<div style="display:flex;flex-direction:column;gap:4px">`;
+      const step = (icon, label, id, detail, color) =>
+        `<div style="display:flex;align-items:center;gap:8px"><span style="color:${color};font-size:14px">${icon}</span><div><span style="color:var(--text3)">${label}:</span> <b style="color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px">${id}</b> <span style="color:var(--text3)">${detail}</span></div></div>`;
+      html += step("👤", "Customer", customer?.name || "—", customer?.segment || "", "#3b82f6");
+      html += step("📋", "Sales Order", order?.id || "—", `$${order?.totalAmount?.toLocaleString()} · ${order?.status}`, "#8b5cf6");
+      html += step("🚚", "Delivery", delivery?.id || "—", delivery ? `${delivery.status} via ${delivery.carrier}` : "No delivery", "#f59e0b");
+      html += step("📍", "Shipped To", address?.city || "—", address?.plant || "", "#64748b");
+      html += step("🧾", "Invoice", inv.id, `$${inv.amount.toLocaleString()} · ${inv.status}`, "#ef4444");
+      html += step("💳", "Payment", payment?.id || "Not paid", payment ? `${payment.method} · ${payment.status}` : "", "#f97316");
+      html += step("📒", "Journal", je?.id || "—", je ? `${je.debit} → ${je.credit}` : "", "#ec4899");
+      html += `</div>`;
+      if (items.length) {
+        html += `<div style="margin-top:10px"><b style="color:var(--text3);text-transform:uppercase;font-size:10px;letter-spacing:.08em">Line Items</b></div>`;
+        html += `<table style="margin-top:6px"><thead><tr><th>Product</th><th>Qty</th><th>Total</th></tr></thead><tbody>`;
+        items.forEach(i => {
+          html += `<tr><td>${i.product?.name || i.productId}</td><td>${i.quantity}</td><td>$${i.lineTotal.toLocaleString()}</td></tr>`;
+        });
+        html += `</tbody></table>`;
+      }
+      html += `</div>`;
+      break;
+    }
+    case "broken_flows": {
+      if (!queryResult.length) { html += `<p style="color:var(--green)">✓ No broken flows detected.</p>`; break; }
+      html += `<table><thead><tr><th>Order</th><th>Customer</th><th>Issues</th></tr></thead><tbody>`;
+      queryResult.forEach(r => {
+        const badges = r.issues.map(i => {
+          const cls = i.includes("overdue") || i.includes("not paid") ? "badge-red" : "badge-yellow";
+          return `<span class="status-badge ${cls}">${i}</span>`;
+        }).join("");
+        html += `<tr><td style="font-family:'IBM Plex Mono',monospace;font-size:11px">${r.order.id}</td><td>${r.customer?.name || "—"}</td><td>${badges}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      break;
+    }
+    case "customer_summary": {
+      html += `<table><thead><tr><th>Customer</th><th>Orders</th><th>Revenue</th><th>Paid</th></tr></thead><tbody>`;
+      queryResult.forEach(c => {
+        html += `<tr><td>${c.name}</td><td>${c.orderCount}</td><td>$${c.totalRevenue.toLocaleString()}</td><td>$${c.paidAmount.toLocaleString()}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      break;
+    }
+    case "overdue_invoices": {
+      if (!queryResult.length) { html += `<p style="color:var(--green)">✓ No overdue invoices.</p>`; break; }
+      html += `<table><thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th><th>Due</th></tr></thead><tbody>`;
+      queryResult.forEach(i => {
+        const cls = i.status === "Overdue" ? "badge-red" : "badge-yellow";
+        html += `<tr><td style="font-family:'IBM Plex Mono',monospace;font-size:11px">${i.id}</td><td>${i.customer?.name || "—"}</td><td>$${i.amount.toLocaleString()}</td><td><span class="status-badge ${cls}">${i.status}</span></td><td>${i.dueDate}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      break;
+    }
+    case "all_orders": {
+      html += `<table><thead><tr><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th><th>Delivery</th><th>Invoice</th></tr></thead><tbody>`;
+      queryResult.forEach(o => {
+        const cls = o.status === "Completed" ? "badge-green" : o.status === "Cancelled" ? "badge-red" : "badge-yellow";
+        html += `<tr><td style="font-family:'IBM Plex Mono',monospace;font-size:11px">${o.id}</td><td>${o.customer?.name||"—"}</td><td>$${o.totalAmount.toLocaleString()}</td><td><span class="status-badge ${cls}">${o.status}</span></td><td>${o.hasDelivery?"✓":"✗"}</td><td>${o.hasInvoice?"✓":"✗"}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      break;
+    }
+    case "revenue_by_category": {
+      html += `<table><thead><tr><th>Category</th><th>Revenue</th></tr></thead><tbody>`;
+      queryResult.forEach(r => {
+        html += `<tr><td>${r.category}</td><td>$${r.revenue.toLocaleString()}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      break;
+    }
+    case "off_topic":
+    case "error":
+    default:
+      // Just show narrative
+      break;
+  }
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════
+// REACT APP
+// ══════════════════════════════════════════════════════════
+const { useState, useEffect, useRef, useCallback } = React;
+
+const SCHEMA = [
+  { name: "Customer", color: TYPE_COLORS.Customer, count: customers.length, fields: ["id:string","name:string","region:string","segment:string","contact:email"] },
+  { name: "Order", color: TYPE_COLORS.Order, count: orders.length, fields: ["id:string","customerId→Customer","date:date","status:enum","totalAmount:number","salesRep:string"] },
+  { name: "OrderItem", color: TYPE_COLORS.OrderItem, count: orderItems.length, fields: ["id:string","orderId→Order","productId→Product","quantity:number","unitPrice:number","lineTotal:number"] },
+  { name: "Product", color: TYPE_COLORS.Product, count: products.length, fields: ["id:string","name:string","category:string","price:number","unit:string"] },
+  { name: "Delivery", color: TYPE_COLORS.Delivery, count: deliveries.length, fields: ["id:string","orderId→Order","addressId→Address","date:date","status:enum","carrier:string"] },
+  { name: "Invoice", color: TYPE_COLORS.Invoice, count: invoices.length, fields: ["id:string","orderId→Order","deliveryId→Delivery","amount:number","status:enum","dueDate:date"] },
+  { name: "Payment", color: TYPE_COLORS.Payment, count: payments.length, fields: ["id:string","invoiceId→Invoice","date:date","amount:number","method:string","journalEntry→JE"] },
+  { name: "JournalEntry", color: TYPE_COLORS.JournalEntry, count: journalEntries.length, fields: ["id:string","paymentId→Payment","date:date","debit:string","credit:string","amount:number"] },
+  { name: "Address", color: TYPE_COLORS.Address, count: addresses.length, fields: ["id:string","street:string","city:string","state:string","plant:string"] },
+];
+
+const SUGGESTIONS = [
+  "Which products have the most billing docs?",
+  "Trace billing document INV-3001",
+  "Show broken order flows",
+  "Summarize all customers",
+  "Which invoices are overdue?",
+  "Revenue by product category",
+];
+
+function GraphView({ highlightIds }) {
+  const svgRef = useRef(null);
+  const simRef = useRef(null);
+  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, node: null });
+  const [hiddenTypes, setHiddenTypes] = useState(new Set());
+  const transformRef = useRef({ x: 0, y: 0, k: 1 });
+
+  useEffect(() => {
+    const { nodes: rawNodes, links: rawLinks } = buildGraph();
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+
+    const W = svgRef.current.clientWidth || 900;
+    const H = svgRef.current.clientHeight || 600;
+
+    const g = svg.append("g");
+
+    // Zoom
+    const zoom = d3.zoom().scaleExtent([0.2, 3]).on("zoom", (event) => {
+      g.attr("transform", event.transform);
+      transformRef.current = event.transform;
+    });
+    svg.call(zoom);
+    svg.call(zoom.transform, d3.zoomIdentity.translate(W/2, H/2).scale(0.55));
+
+    // Arrow markers
+    const defs = svg.append("defs");
+    Object.entries(TYPE_COLORS).forEach(([type, color]) => {
+      defs.append("marker")
+        .attr("id", `arrow-${type}`)
+        .attr("viewBox", "0 -4 8 8")
+        .attr("refX", 18).attr("refY", 0)
+        .attr("markerWidth", 6).attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("d", "M0,-4L8,0L0,4")
+        .attr("fill", color).attr("opacity", 0.6);
+    });
+
+    const nodes = rawNodes.map(n => ({ ...n }));
+    const links = rawLinks.map(l => ({ ...l }));
+
+    const simulation = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id(d => d.id).distance(d => {
+        const typeMap = { OrderItem: 60, Product: 80, Address: 80 };
+        return typeMap[d.source.type] || typeMap[d.target?.type] || 110;
+      }).strength(0.4))
+      .force("charge", d3.forceManyBody().strength(-250))
+      .force("collide", d3.forceCollide(28))
+      .force("center", d3.forceCenter(0, 0))
+      .force("x", d3.forceX(0).strength(0.03))
+      .force("y", d3.forceY(0).strength(0.03));
+
+    simRef.current = simulation;
+
+    const linkEl = g.append("g").attr("class", "links")
+      .selectAll("line").data(links).enter().append("line")
+      .attr("stroke", d => {
+        const src = nodes.find(n => n.id === (typeof d.source === "object" ? d.source.id : d.source));
+        return src ? src.color + "55" : "#ffffff22";
+      })
+      .attr("stroke-width", 1)
+      .attr("marker-end", d => {
+        const src = nodes.find(n => n.id === (typeof d.source === "object" ? d.source.id : d.source));
+        return src ? `url(#arrow-${src.type})` : "";
+      });
+
+    const nodeEl = g.append("g").attr("class", "nodes")
+      .selectAll("g").data(nodes).enter().append("g")
+      .attr("class", "node-group")
+      .style("cursor", "pointer")
+      .call(d3.drag()
+        .on("start", (event, d) => {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x; d.fy = d.y;
+        })
+        .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on("end", (event, d) => {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null; d.fy = null;
+        })
+      );
+
+    nodeEl.append("circle")
+      .attr("r", d => d.type === "Customer" ? 16 : d.type === "Product" ? 14 : 10)
+      .attr("fill", d => d.color + "22")
+      .attr("stroke", d => d.color)
+      .attr("stroke-width", d => d.type === "Customer" ? 2.5 : 1.5);
+
+    nodeEl.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.35em")
+      .attr("fill", d => d.color)
+      .attr("font-size", d => d.type === "Customer" ? 11 : 9)
+      .attr("font-family", "IBM Plex Mono, monospace")
+      .attr("pointer-events", "none")
+      .text(d => {
+        if (d.type === "Customer") return d.label.split(" ")[0];
+        return d.id.replace("SO-", "").replace("DEL-", "D").replace("INV-", "I").replace("PAY-", "P").replace("JE-", "J").replace("OI-", "OI").replace("C0", "C").replace("P0", "P").replace("A0", "A");
+      });
+
+    nodeEl.on("mouseenter", (event, d) => {
+      const rect = svgRef.current.getBoundingClientRect();
+      setTooltip({
+        visible: true,
+        x: event.clientX - rect.left + 12,
+        y: event.clientY - rect.top - 10,
+        node: d
+      });
+    }).on("mouseleave", () => {
+      setTooltip(t => ({ ...t, visible: false }));
+    });
+
+    simulation.on("tick", () => {
+      linkEl
+        .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      nodeEl.attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+
+    return () => simulation.stop();
+  }, []);
+
+  // Highlight nodes when chat references IDs
+  useEffect(() => {
+    if (!svgRef.current) return;
+    d3.select(svgRef.current).selectAll(".node-group circle")
+      .attr("stroke-width", d => {
+        if (highlightIds && highlightIds.has(d.id)) return 3.5;
+        return d.type === "Customer" ? 2.5 : 1.5;
+      })
+      .attr("r", d => {
+        if (highlightIds && highlightIds.has(d.id)) return 20;
+        return d.type === "Customer" ? 16 : d.type === "Product" ? 14 : 10;
+      });
+  }, [highlightIds]);
+
+  const handleZoom = (dir) => {
+    const svg = d3.select(svgRef.current);
+    const zoom = d3.zoom().scaleExtent([0.2, 3]).on("zoom", (event) => {
+      svg.select("g").attr("transform", event.transform);
+    });
+    svg.transition().call(zoom.scaleBy, dir === "in" ? 1.3 : 0.77);
+  };
+
+  const renderTooltip = () => {
+    if (!tooltip.visible || !tooltip.node) return null;
+    const n = tooltip.node;
+    const entries = Object.entries(n.data).filter(([k]) => k !== "id");
+    return (
+      React.createElement("div", {
+        className: `node-tooltip ${tooltip.visible ? "visible" : ""}`,
+        style: { left: tooltip.x, top: tooltip.y }
+      },
+        React.createElement("div", { className: "tooltip-type", style: { color: n.color } }, n.type),
+        React.createElement("div", { className: "tooltip-id" }, n.data.id || n.id),
+        entries.slice(0, 5).map(([k, v]) =>
+          React.createElement("div", { key: k, className: "tooltip-row" },
+            React.createElement("span", { className: "k" }, k),
+            React.createElement("span", { className: "v" }, String(v).length > 20 ? String(v).slice(0, 20) + "…" : String(v))
+          )
+        )
+      )
+    );
+  };
+
+  const legendTypes = Object.entries(TYPE_COLORS);
+
+  return React.createElement("div", { className: "graph-panel" },
+    React.createElement("svg", { ref: svgRef, className: "graph-svg" }),
+    renderTooltip(),
+    React.createElement("div", { className: "legend" },
+      React.createElement("div", { className: "legend-title" }, "Node Types"),
+      legendTypes.map(([type, color]) =>
+        React.createElement("div", {
+          key: type,
+          className: `legend-item ${hiddenTypes.has(type) ? "dimmed" : ""}`,
+          onClick: () => setHiddenTypes(s => {
+            const ns = new Set(s);
+            ns.has(type) ? ns.delete(type) : ns.add(type);
+            return ns;
+          })
+        },
+          React.createElement("div", { className: "legend-dot", style: { background: color } }),
+          type
+        )
+      )
+    ),
+    React.createElement("div", { className: "graph-controls" },
+      React.createElement("button", { className: "ctrl-btn", onClick: () => handleZoom("in"), title: "Zoom in" }, "+"),
+      React.createElement("button", { className: "ctrl-btn", onClick: () => handleZoom("out"), title: "Zoom out" }, "−")
+    )
+  );
+}
+
+function SchemaPanel() {
+  const [expanded, setExpanded] = useState(new Set(["Customer", "Order"]));
+  return React.createElement("div", { className: "schema-panel" },
+    SCHEMA.map(e =>
+      React.createElement("div", { key: e.name, className: "schema-entity" },
+        React.createElement("div", {
+          className: "schema-header",
+          onClick: () => setExpanded(s => {
+            const ns = new Set(s);
+            ns.has(e.name) ? ns.delete(e.name) : ns.add(e.name);
+            return ns;
+          })
+        },
+          React.createElement("div", { className: "ent-dot", style: { background: e.color } }),
+          React.createElement("span", { className: "ent-name" }, e.name),
+          React.createElement("span", { className: "ent-count" }, `${e.count} rows`),
+          React.createElement("span", { style: { color: "var(--text3)", fontSize: 12 } }, expanded.has(e.name) ? "▲" : "▼")
+        ),
+        expanded.has(e.name) && React.createElement("div", { className: "schema-fields" },
+          e.fields.map((f, i) => {
+            const [name, type] = f.split(":");
+            return React.createElement("div", { key: i, className: "schema-field" },
+              React.createElement("span", { className: "fk" }, name),
+              React.createElement("span", { className: "ft" }, type || "")
+            );
+          })
+        )
+      )
+    )
+  );
+}
+
+function ChatPanel({ apiKey, setApiKey }) {
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      html: `<p>Hello! I'm the <b>DataGraph Query Engine</b>. Ask me anything about your supply chain data — orders, deliveries, invoices, payments, products, and customers.</p><p style="margin-top:8px;color:var(--text3);font-size:12px">Try one of the suggestions below, or ask your own question.</p>`,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    }
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [localApiKey, setLocalApiKey] = useState(apiKey || "");
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const send = async (query) => {
+    const q = (query || input).trim();
+    if (!q) return;
+    const key = localApiKey.trim();
+    if (!key) {
+      setMessages(m => [...m, {
+        role: "assistant",
+        html: `<p style="color:var(--yellow)">⚠ Please enter your Anthropic API key above to use the query engine.</p>`,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      }]);
+      return;
+    }
+
+    setInput("");
+    setMessages(m => [...m,
+      { role: "user", text: q, timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+      { role: "assistant", html: `<p class="thinking">⟳ Translating query…</p>`, timestamp: "", thinking: true }
+    ]);
+    setLoading(true);
+
+    try {
+      const result = await translateAndAnswer(q, key);
+      const { intent, params, narrative } = result;
+      
+      let queryResult = null;
+      if (intent && intent !== "off_topic" && intent !== "error") {
+        const cleanIntent = intent.includes(":") ? intent.split(":")[0] : intent;
+        const docId = intent.includes(":") ? intent.split(":")[1] : params?.docId;
+        queryResult = executeQuery(cleanIntent, { ...params, docId });
+      }
+
+      const html = formatResult(
+        intent.includes(":") ? intent.split(":")[0] : intent,
+        params,
+        queryResult,
+        narrative
+      );
+
+      setMessages(m => [
+        ...m.filter(msg => !msg.thinking),
+        {
+          role: "assistant",
+          html,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        }
+      ]);
+    } catch (err) {
+      setMessages(m => [
+        ...m.filter(msg => !msg.thinking),
+        {
+          role: "assistant",
+          html: `<p style="color:var(--red)">Error: ${err.message}</p>`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return React.createElement("div", { className: "chat-panel" },
+    // API key input
+    React.createElement("div", { className: "api-key-banner" },
+      React.createElement("div", { style: { flex: 1 } },
+        React.createElement("div", null, "🔑 Anthropic API Key required"),
+        React.createElement("input", {
+          type: "password",
+          className: "api-key-input",
+          placeholder: "sk-ant-...",
+          value: localApiKey,
+          onChange: e => { setLocalApiKey(e.target.value); setApiKey(e.target.value); }
+        })
+      )
+    ),
+    // Messages
+    React.createElement("div", { className: "chat-messages" },
+      messages.map((msg, i) =>
+        React.createElement("div", { key: i, className: `msg ${msg.role}` },
+          msg.role === "user"
+            ? React.createElement("div", { className: "msg-bubble" }, msg.text)
+            : React.createElement("div", {
+                className: "msg-bubble",
+                dangerouslySetInnerHTML: { __html: msg.html }
+              }),
+          msg.timestamp && React.createElement("div", { className: "msg-meta" }, msg.timestamp)
+        )
+      ),
+      React.createElement("div", { ref: messagesEndRef })
+    ),
+    // Suggestions
+    React.createElement("div", { className: "chat-suggestions" },
+      SUGGESTIONS.map((s, i) =>
+        React.createElement("div", {
+          key: i, className: "suggestion-chip",
+          onClick: () => !loading && send(s)
+        }, s)
+      )
+    ),
+    // Input
+    React.createElement("div", { className: "chat-input-area" },
+      React.createElement("div", { className: "chat-input-row" },
+        React.createElement("textarea", {
+          className: "chat-input",
+          placeholder: "Ask about orders, deliveries, invoices…",
+          value: input,
+          rows: 1,
+          onChange: e => setInput(e.target.value),
+          onKeyDown: e => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+          }
+        }),
+        React.createElement("button", {
+          className: "send-btn",
+          disabled: loading || !input.trim(),
+          onClick: () => send()
+        }, loading ? "…" : "↑")
+      )
+    )
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("chat");
+  const [apiKey, setApiKey] = useState("");
+  const [highlightIds] = useState(null);
+
+  const { nodes, links } = buildGraph();
+
+  return React.createElement("div", { id: "app" },
+    // Header
+    React.createElement("header", { className: "header" },
+      React.createElement("div", { className: "header-logo" },
+        React.createElement("div", { className: "dot" }),
+        React.createElement("h1", null, "Data", React.createElement("span", null, "Graph"))
+      ),
+      React.createElement("div", { className: "header-stats" },
+        React.createElement("span", null, `${nodes.length} nodes`),
+        React.createElement("span", null, "·"),
+        React.createElement("span", null, `${links.length} edges`),
+        React.createElement("span", null, "·"),
+        React.createElement("span", null, "9 entity types"),
+        React.createElement("span", null, "·"),
+        React.createElement("span", null, "Supply Chain Dataset")
+      )
+    ),
+    // Main
+    React.createElement("div", { className: "main" },
+      React.createElement(GraphView, { highlightIds }),
+      React.createElement("div", { className: "right-panel" },
+        React.createElement("div", { className: "panel-tabs" },
+          React.createElement("div", { className: `tab ${tab === "chat" ? "active" : ""}`, onClick: () => setTab("chat") }, "Query"),
+          React.createElement("div", { className: `tab ${tab === "schema" ? "active" : ""}`, onClick: () => setTab("schema") }, "Schema")
+        ),
+        tab === "chat"
+          ? React.createElement(ChatPanel, { apiKey, setApiKey })
+          : React.createElement(SchemaPanel, null)
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
